@@ -2,6 +2,20 @@
 # /opt/DaemonSpectre/spectre.sh
 # Core logic for DaemonSpectre
 
+if grep -q $'\r' "$0"; then
+    echo "NOTICE: Converting script to Unix format..." >> /dev/stderr
+    
+    # 2. Use 'tr' to delete the carriage return character
+    # This reads the script's content, strips the \r, and overwrites the script file.
+    # Note: Requires temporary file creation because we're modifying the source file
+    TMP_FILE=$(mktemp)
+    tr -d '\r' < "$0" > "$TMP_FILE"
+    mv "$TMP_FILE" "$0"
+    
+    # Re-execute the cleaned script
+    exec "$0" "$@"
+fi
+
 WHITELIST_FILE="/opt/DaemonSpectre/daemonspectre_wlist.txt"
 
 # --- Function to get all active jobs in a clean, parsable format ---
