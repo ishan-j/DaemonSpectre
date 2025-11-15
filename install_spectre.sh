@@ -9,6 +9,7 @@ INSTALL_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 # Define local paths
 WRAPPER_SCRIPT="$INSTALL_DIR/spectre_wrapper.sh"
+CORE_SCRIPT="$INSTALL_DIR/spectre.sh"
 GLOBAL_COMMAND="/usr/local/bin/spectre"
 WHITELIST_FILE="/etc/daemonspectre_whitelist.txt"
 
