@@ -38,7 +38,7 @@ mv "$WRAPPER_SCRIPT.new" "$WRAPPER_SCRIPT"
 # 4. Set permissions and create the global link
 echo "Setting executable permission on wrapper..."
 chmod +x "$WRAPPER_SCRIPT"
-
+chmod +x "$CORE_SCRIPT"
 if [ -L "$GLOBAL_COMMAND" ]; then
     echo "Removing existing global link..."
     rm "$GLOBAL_COMMAND"
