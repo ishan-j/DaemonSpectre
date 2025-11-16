@@ -20,29 +20,12 @@ if [ ! -f "$WHITELIST_FILE" ]; then
     echo "Creating central whitelist file: $WHITELIST_FILE"
     touch "$WHITELIST_FILE"
 fi
-if [ ! -f "$WHITELIST_FILE" ]; then
-    echo "Creating central whitelist file: $WHITELIST_FILE"
-    touch "$WHITELIST_FILE"
+if [ ! -f "$JOBLISTLIST_FILE" ]; then
+    echo "Creating central whitelist file: $JOBLIST_FILE"
+    touch "$JOBLIST_FILE"
 fi
 
-JOBS_OUTPUT=$(crontab -l 2>/dev/null)
-        EXIT_STATUS=$? # Capture the exit status
-        
-        if [ "$EXIT_STATUS" -eq 0 ] && [ -n "$JOBS_OUTPUT" ]; then
-            
-            echo "$JOBS_OUTPUT" | sed '1,24d' > "/etc/daemonspectre_jlist.txt"
-
-            
-        elif [ "$EXIT_STATUS" -ne 0 ]; then
-            echo "Error running 'crontab -l'. Check user permissions." > "/etc/daemonspectre_jlist.txt"
-
-        else
-            echo "No crontab entries found for user $USER." > "/etc/daemonspectre_jlist.txt"
-
-        fi
-
-
-
+crontab -l | sed '1,23d' | awk '{print "JOB" ++i " : " $0}' > /etc/daemonspectre_jlist.txt
 echo ""
 echo "DaemonSpectre ready..."
 echo "You can now run 'spectre ls' or 'spectre wlist -e' globally."
