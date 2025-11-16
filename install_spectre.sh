@@ -1,11 +1,9 @@
 #!/bin/bash
-# install_spectre.sh - Simplified DaemonSpectre Installation
+echo "---  DaemonSpectre Installation ---"
 
-echo "--- 🛡️ DaemonSpectre Installation ---"
-
-# Define global names and paths
 GLOBAL_COMMAND_NAME="spectre"
 GLOBAL_INSTALL_PATH="/usr/local/bin/$GLOBAL_COMMAND_NAME"
+JOBLIST_FILE="/etc/daemonspectre_jlist.txt"
 WHITELIST_FILE="/etc/daemonspectre_wlist.txt"
 CORE_SCRIPT_LOCAL="spectre.sh"
 
@@ -15,24 +13,36 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# 2. **PORTABILITY FIX:** Clean the core script before copying it (fixes the \r issue)
-echo "Sanitizing core script for Linux compatibility..."
-tr -d '\r' < "$CORE_SCRIPT_LOCAL" > "$CORE_SCRIPT_LOCAL.clean"
-mv "$CORE_SCRIPT_LOCAL.clean" "$CORE_SCRIPT_LOCAL"
-
-# 3. Copy core script to a global PATH location
 echo "Installing $GLOBAL_COMMAND_NAME to $GLOBAL_INSTALL_PATH..."
 cp "$CORE_SCRIPT_LOCAL" "$GLOBAL_INSTALL_PATH"
-
-# 4. Ensure it is executable
 chmod +x "$GLOBAL_INSTALL_PATH"
-
-# 5. Initialize central configuration file
+if [ ! -f "$WHITELIST_FILE" ]; then
+    echo "Creating central whitelist file: $WHITELIST_FILE"
+    touch "$WHITELIST_FILE"
+fi
 if [ ! -f "$WHITELIST_FILE" ]; then
     echo "Creating central whitelist file: $WHITELIST_FILE"
     touch "$WHITELIST_FILE"
 fi
 
+JOBS_OUTPUT=$(crontab -l 2>/dev/null)
+        EXIT_STATUS=$? # Capture the exit status
+        
+        if [ "$EXIT_STATUS" -eq 0 ] && [ -n "$JOBS_OUTPUT" ]; then
+            
+            echo "$JOBS_OUTPUT" | sed '1,24d' > "/etc/daemonspectre_jlist.txt"
+
+            
+        elif [ "$EXIT_STATUS" -ne 0 ]; then
+            echo "Error running 'crontab -l'. Check user permissions." > "/etc/daemonspectre_jlist.txt"
+
+        else
+            echo "No crontab entries found for user $USER." > "/etc/daemonspectre_jlist.txt"
+
+        fi
+
+
+
 echo ""
-echo "--- ✅ DaemonSpectre Installation Complete! ---"
+echo "DaemonSpectre ready..."
 echo "You can now run 'spectre ls' or 'spectre wlist -e' globally."
