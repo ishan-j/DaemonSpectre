@@ -1,97 +1,81 @@
 #!/bin/bash
-# /opt/DaemonSpectre/spectre.sh
-# Core logic for DaemonSpectre
+# /usr/local/bin/spectre - Core DaemonSpectre Logic
 
-if grep -q $'\r' "$0"; then
-    echo "NOTICE: Converting script to Unix format..." >> /dev/stderr
-    
-    # 2. Use 'tr' to delete the carriage return character
-    # This reads the script's content, strips the \r, and overwrites the script file.
-    # Note: Requires temporary file creation because we're modifying the source file
-    TMP_FILE=$(mktemp)
-    tr -d '\r' < "$0" > "$TMP_FILE"
-    mv "$TMP_FILE" "$0"
-    
-    # Re-execute the cleaned script
-    exec "$0" "$@"
+WHITELIST_FILE="/etc/daemonspectre_wlist.txt"
+EDITOR_CMD="${EDITOR:-nano}"
+
+# --- Check for root permissions (since this script runs globally) ---
+if [[ $EUID -ne 0 ]]; then
+    echo "🚨 Error: The 'spectre' command must be run with sudo for auditing privileges."
+    exit 1
 fi
 
-WHITELIST_FILE="/opt/DaemonSpectre/daemonspectre_wlist.txt"
-
-# --- Function to get all active jobs in a clean, parsable format ---
+# --- Function to get all active jobs in a clean format (UNITS: User:Schedule Command) ---
 get_all_active_jobs() {
     # 1. User Crontabs (crontab -e jobs)
     for user_file in /var/spool/cron/crontabs/* 2>/dev/null; do
         user=$(basename "$user_file")
-        # List jobs, ignore comments/empty lines, and prepend user:
         crontab -u "$user" -l 2>/dev/null | grep -v '^\s*#' | grep -v '^\s*$' | awk -v u="$user" '{print u":"$0}'
     done
 
     # 2. System Crontabs (/etc/crontab and /etc/cron.d/)
-    # Filter for non-comment/non-empty lines and prepend the filename
-    grep -rE '^[0-9*@]' /etc/crontab /etc/cron.d/* 2>/dev/null | grep -v '^\s*#' | grep -v '^\s*$' | awk -F: '{
-        # $1 is the filename, $2 is the line content
-        # Normalize the line to USER:SCHEDULE:COMMAND format
-        # System crons have 6 fields before the command (Min, Hr, Dom, Mon, Dow, User)
-        if ($1 == "/etc/crontab") {
-            # Normalize the line and print (User is $6, command is $7 onwards)
-            print $6 ":" $1 " " $2 " " $3 " " $4 " " $5 " " $7
-        } else {
-            # For /etc/cron.d files, the line is 6 fields (Min...User) + command
+    grep -rE '^[0-9*@]' /etc/crontab /etc/cron.d/* 2>/dev/null | grep -v '^\s*#' | grep -v '^\s*$' | awk -F: '
+    {
+        # Split line by spaces to identify user and command (fields 6 onwards)
+        # This parsing is complex but handles the differing formats
+        if (NF > 5 && $6 ~ /^[a-z_]/) { # Basic check for user field existence
             user=$6;
             sub(/^[^:]*:/, "", $0); # Remove filename prefix
-            print $6 ":" $1 " " $2 " " $3 " " $4 " " $5 " " $7
+            
+            # Print user:schedule:command (fields 1-5 for schedule, rest for command)
+            print user":"$1 " " $2 " " $3 " " $4 " " $5 " " substr($0, index($0,$7))
         }
     }'
 }
 
-# --- Function to list all jobs, numbered for whitelisting ---
+# --- Command Handlers ---
+
 list_all_jobs() {
-    # Get all active jobs and pipe them to a numbering utility (nl)
+    echo "--- 🌍 All Active Cron Jobs (Format: USER:SCHEDULE COMMAND) ---"
     get_all_active_jobs | nl -w3 -s '. '
 }
 
-# --- Function to generate the initial, commented whitelist file ---
 generate_initial_whitelist() {
-    # If the whitelist file doesn't exist or is empty, generate it.
+    # If the whitelist file doesn't exist, generate the commented list of all jobs
     if [ ! -s "$WHITELIST_FILE" ]; then
         echo "# --- DaemonSpectre Whitelist Configuration ---" > "$WHITELIST_FILE"
         echo "# To whitelist a job, remove the '#' at the start of the line." >> "$WHITELIST_FILE"
-        echo "# Lines must be in the format: USER:SCHEDULE COMMAND" >> "$WHITELIST_FILE"
+        echo "# Format: USER:MIN HR DOM MON DOW COMMAND" >> "$WHITELIST_FILE"
         echo "" >> "$WHITELIST_FILE"
         
-        # Get all jobs and comment them out before writing to the file
+        # Get all jobs, comment them out, and write to the file
         get_all_active_jobs | sed 's/^/# /' >> "$WHITELIST_FILE"
-        
-        echo "Initial whitelist generated. Please edit it now."
     fi
 }
 
-# --- Function to show suspicious jobs ---
 show_suspicious_jobs() {
-    # 1. Check if the whitelist file is ready
-    if [ ! -f "$WHITELIST_FILE" ]; then
-        echo "🚨 ERROR: Whitelist file not found. Run 'spectre wlist -e' first to generate it."
+    if [ ! -s "$WHITELIST_FILE" ]; then
+        echo "🚨 ERROR: Whitelist is empty. Run 'spectre wlist -e' to set it up."
         return 1
     fi
     
-    # 2. Extract only the UNCOMMENTED (whitelisted) lines
+    # 1. Extract only the UNCOMMENTED (whitelisted) lines
     ACTIVE_WHITELIST=$(grep -v '^\s*#' "$WHITELIST_FILE" | grep -v '^\s*$')
     
-    # 3. Get all current jobs
+    # 2. Get all current active jobs
     ALL_JOBS=$(get_all_active_jobs)
     
     echo "--- 🚨 Suspicious Cron Jobs (Not in Whitelist) 🚨 ---"
     
-    # Use process substitution to feed the active whitelist to grep
-    # -F: fixed strings, -x: entire line match, -v: invert match
+    # 3. Use grep to filter (only print lines NOT found in the ACTIVE_WHITELIST)
+    # The comparison logic: grep -F (fixed strings), -v (invert match), -x (exact line match)
     echo "$ALL_JOBS" | grep -F -v -x -f <(echo "$ACTIVE_WHITELIST")
 }
 
-# --- Main execution based on command argument ---
+
+# --- Main Command Router ---
 case "$1" in
     ls)
-        echo "--- 🌍 All Active Cron Jobs (Format: USER:SCHEDULE COMMAND) ---"
         list_all_jobs
         ;;
     sus)
@@ -100,10 +84,9 @@ case "$1" in
     wlist)
         case "$2" in
             -e)
-                # Generate initial list if needed, then open editor
-                generate_initial_whitelist
-                ${EDITOR:-nano} "$WHITELIST_FILE"
-                echo "Whitelist updated. Remember to save changes."
+                generate_initial_whitelist # Ensures file exists and is populated
+                "$EDITOR_CMD" "$WHITELIST_FILE"
+                echo "Whitelist updated. Run 'spectre sus' to check for unknown jobs."
                 ;;
             *)
                 echo "--- ✅ Current Active Whitelist ---"
@@ -112,7 +95,8 @@ case "$1" in
         esac
         ;;
     *)
-        echo "Usage: spectre {ls | sus | wlist [-e]}"
+        echo "DaemonSpectre: Cron Job Auditing Tool"
+        echo "Usage: sudo spectre {ls | sus | wlist [-e]}"
         exit 1
         ;;
 esac
